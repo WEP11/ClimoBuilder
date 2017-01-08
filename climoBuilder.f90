@@ -65,8 +65,16 @@ PROGRAM climoBuilder
 	
 	! Array for finding the average and standard deviation of 8 given variables
 	REAL,DIMENSION(9) :: asosAvg=0, asosStd=0, asosHi=0, asosLo=0, asosOnsetAvg=0,asosOnsetStd=0,asosOnsetHi=0,asosOnsetLo=0,&
-						asosPeakAvg=0,asosPeakStd=0,asosPeakHi=0,asosPeakLo=0, asosEndAvg=0,asosEndStd=0,asosEndHi=0,asosEndLo=0
-	
+		asosPeakAvg=0,asosPeakStd=0,asosPeakHi=0,asosPeakLo=0, asosEndAvg=0,asosEndStd=0,asosEndHi=0,asosEndLo=0
+        
+        REAL,DIMENSION(9) :: asosMorningAvg=0, asosMorningStd=0, asosMorningLo=0, asosMorningHi=0, asosDayAvg=0, asosDayStd=0,&
+                asosDayLo=0,asosDayHi=0,asosDuskAvg=0,asosDuskStd,asosDuskHi=0,asosDuskLo=0,asosNightAvg=0,asosNightStd=0,&
+                asosNightHi=0,asosNightLo=0        
+
+
+        ! Time-of-Day Case Counters:
+        INTEGER :: morningCases=0, dayCases=0, duskCases=0, nightCases=0
+
 	REAL,DIMENSION(14) :: upperBound,lowerBound
 	INTEGER,DIMENSION(14) :: windCases
 
@@ -323,16 +331,50 @@ PROGRAM climoBuilder
 		asosOnsetHi(i)=hiArray(asosData(:,:,i),numberOfDates,date(:,4),asosData(:,:,1),1)
 		asosOnsetLo(i)=loArray(asosData(:,:,i),numberOfDates,date(:,4),asosData(:,:,1),1)
 
-		asosPeakAvg(i)=eventOnsetAvg(asosData(:,:,i),numberOfDates,date(:,5),asosData(:,:,1),1) ! Finds data averages at event start
+		asosPeakAvg(i)=eventOnsetAvg(asosData(:,:,i),numberOfDates,date(:,5),asosData(:,:,1),1) ! Finds data averages at event peak
 		asosPeakStd(i)=stdArray(asosData(:,:,i),asosPeakAvg(i),numberOfDates,date(:,4),asosData(:,:,1),1) ! Find ASOS data standard deviations
 		asosPeakHi(i)=hiArray(asosData(:,:,i),numberOfDates,date(:,5),asosData(:,:,1),1)
 		asosPeakLo(i)=loArray(asosData(:,:,i),numberOfDates,date(:,5),asosData(:,:,1),1)
 
-		asosEndAvg(i)=eventOnsetAvg(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1) ! Finds data averages at event start
+		asosEndAvg(i)=eventOnsetAvg(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1) ! Finds data averages at event end
 		asosEndStd(i)=stdArray(asosData(:,:,i),asosEndAvg(i),numberOfDates,date(:,4),asosData(:,:,1),1) ! Find ASOS data standard deviations
 		asosEndHi(i)=hiArray(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1)
 		asosEndLo(i)=loArray(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1)
 	END DO
+
+        ! Next we find the time-of-day statistics. We will be using the following definitions...
+        ! Morning : 0600-1000
+        ! Day     : 1000-1600
+        ! Dusk    : 1600-2000
+        ! Night   : 2000-0600
+        asosNightHi = (/ 0.,-90.,-90.,0.,-10.,0.,0.,0.,0. /)
+        asosNightLo = (/ 0.,200.,200.,200.,400.,400.,1000.,2000.,80. /)
+        ! Loop through all times...
+        DO i=1,numberOfDates
+                IF (date(i,5) < 600 .or. date(i,5) >= 2000) THEN
+                        DO j=2,9
+                                DO k=1,100
+                                        IF (asosData(i,k,1) == date(i,5) .and. asosData(i,k,j) > -900 ) THEN
+                                                nightCases=nightCases + 1
+                                                asosNightAvg(j) = asosNightAvg(j) + asosData(i,k,j)
+                                                IF (asosData(i,k,j) > asosNightHi(j)) THEN
+                                                        asosNightHi(j) = asosData(i,k,j)
+                                                END IF
+
+                                                IF (asosData(i,k,j) < asosNightLo(j)) THEN
+                                                        asosNightLo(j) = asosData(i,k,j)
+                                                END IF
+                                        END IF
+                                END DO
+                        END DO
+                END IF
+        END DO
+        
+        DO i=1,9
+                asosNightAvg(i) = asosNightAvg(i) / nightCases
+        END DO
+
+
 
 	CALL asosHistogram(histogramData,asosData,asosOnsetAvg,asosOnsetStd,numberOfDates,date(:,4)) ! Grab histogram data based on the onset time
 	CALL asosDTHistogram(histogramData,asosData,numberOfDates,date(:,4)) ! Grab histogram data based on the onset time
@@ -364,6 +406,7 @@ PROGRAM climoBuilder
 	WRITE(8,302)
 	WRITE(8,303)
 	WRITE(8,304)
+403     FORMAT("                                      EVENING EVENT STATISTICS")
 397	FORMAT("                                      EVENT END ASOS STATISTICS")
 398	FORMAT("                                     EVENT PEAK ASOS STATISTICS")
 399	FORMAT("                                     EVENT ONSET ASOS STATISTICS")	
@@ -421,7 +464,19 @@ PROGRAM climoBuilder
 			asosEndAvg(8),asosEndAvg(9)
     WRITE(8,308) asosEndLo(2),asosEndLo(3),asosEndLo(4),asosEndLo(5),asosEndLo(6),asosEndLo(7),&
 			asosEndLo(8),asosEndLo(9)
-
+        WRITE(8,309)
+        WRITE(8,403)
+        WRITE(8,302)
+        WRITE(8,303)
+        WRITE(8,304)
+	WRITE(8,305) asosNightAvg(2),asosNightAvg(3),asosNightAvg(4),asosNightAvg(5),asosNightAvg(6),asosNightAvg(7),&
+			asosNightAvg(8),asosNightAvg(9)
+    !WRITE(8,306) asosEndStd(2),asosEndStd(3),asosEndStd(4),asosEndStd(5),asosEndStd(6),asosEndStd(7),&
+!			asosEndStd(8),asosEndStd(9)
+    WRITE(8,307) asosNightHi(2),asosNightHi(3),asosNightHi(4),asosNightHi(5),asosNightHi(6),asosNightHi(7),&
+			asosNightAvg(8),asosNightAvg(9)
+    WRITE(8,308) asosNightLo(2),asosNightLo(3),asosNightLo(4),asosNightLo(5),asosNightLo(6),asosNightLo(7),&
+			asosNightLo(8),asosNightLo(9)
 309	FORMAT(/)
 310	FORMAT("                                        UPPER AIR STATISTICS")
 311	FORMAT("                          AVG       HI       LO")
