@@ -5,7 +5,7 @@
 ! Date      : 21-Apr-2016
 !
 !---------------------------------------------------------
-! This program reads in IA State ASOS data and Wyoming Sounding data
+! This program reads in IA State ASOS data and ESRL Sounding data
 ! for storm event cases given by the RunAnalysis.sh script. It
 ! will find the statistics from all cases.
 ! in addition an 'average' sounding is built from which the
@@ -20,7 +20,7 @@
 PROGRAM climoBuilder
 
 	IMPLICIT NONE	
-	REAL :: versionControl = 1.2
+	REAL :: versionControl = 0.1
 
 	! INITIALIZATION -------------------------------------------------------------------------------------------------
 
@@ -61,7 +61,7 @@ PROGRAM climoBuilder
 
 	! Precipitable water, average, low, high; Average Mixing Ratio; average ASOS Temperature, running total for finding
 	!    standard deviation
-	REAL :: PW=0,avgPW=0,lowPW=0,hiPW=0,averageMixingRatio,stdTotal
+	REAL :: PW=0,avgPW=0,lowPW=0,hiPW=0,averageMixingRatio
 	
 	! Array for finding the average and standard deviation of 8 given variables
 	REAL,DIMENSION(9) :: asosAvg=0, asosStd=0, asosHi=0, asosLo=0, asosOnsetAvg=0,asosOnsetStd=0,asosOnsetHi=0,asosOnsetLo=0,&
@@ -75,7 +75,6 @@ PROGRAM climoBuilder
         ! Time-of-Day Case Counters:
         INTEGER :: morningCases=0, dayCases=0, duskCases=0, nightCases=0
 
-	REAL,DIMENSION(14) :: upperBound,lowerBound
 	INTEGER,DIMENSION(14) :: windCases
 
 	INTEGER,DIMENSION(8,2,100) :: histogramData=0
@@ -144,103 +143,15 @@ PROGRAM climoBuilder
 	! Since there are many events in this analysis, we have a quality control subroutine to take care of missing/bad
 	! data.
 	CALL asosQC(asosData,numberOfDates)
-
-	! SOUNDING STATISTICS --------------------------------------------------------------------------------------------
-	avgSounding=0 !Initialize the averageSounding to zero
-
-	! First we find an 'average' sounding...
-	! 	Notice that we cycle through each variable and level before the actual arrays.
-	!	This is needed since we are averaging each part of a sounding.
 	
-	DO i=2,8 ! Loop through each variable
-			
-		DO j=1,14 ! Loop through each mandatory level
-		cases=0 ! Reset case total as 0
-			DO k=1,numberOfDates ! Loop through each date
-					DO l=1,20 ! Loop through each level						
-							IF(soundingData(k,l,1) == mandatoryLevels(j) .and. soundingData(k,l,i) < 999.98) THEN ! Find the current mandatory level
-								avgSounding(j,i)=avgSounding(j,i)+soundingData(k,l,i) ! Add the value to the total
-								cases=cases+1 ! Add one case to the running case total
-							END IF	
-					END DO	
-			END DO
-			IF(i == 7) THEN
-				avgSounding(j,i)=avgSounding(j,i)/cases
-				avgSounding(j,i)=MOD(avgSounding(j,i),360.)
-			ELSE
-				avgSounding(j,i)=avgSounding(j,i)/cases ! Find the average
-			END IF
-			avgSounding(j,1)=mandatoryLevels(j) ! Set the pressure level
-		END DO
-	END DO
-	! Find the mode of windspeed, this one is a little complicated...
-	CALL windMode(soundingData,numberOfDates,modeWindDir)
-	! Find number of days within 68% of the mode...
-	windCases=0
-	DO i=1,14 !Set the boundaries within 68% of mode...
-		upperBound(i) = (0.68 * modeWindDir(i)) + modeWindDir(i)
-		lowerBound(i) = modeWindDir(i) - (0.68 * modeWindDir(i))
-		IF( upperBound(i) < 0 ) THEN
-			upperBound(i)=upperBound(i)+360.
-		ELSE IF(upperBound(i) > 360) THEN
-			upperBound(i)=upperBound(i)-360.
-		END IF
-		IF( lowerBound(i) < 0 ) THEN
-			lowerBound(i)=lowerBound(i)+360.
-		ELSE IF(lowerBound(i) > 360) THEN
-			lowerBound(i)=lowerBound(i)-360.
-		END IF
-	END DO
-	DO i=1,numberOfDates
-		DO j=1,14
-			DO k=1,20
-				IF(soundingData(i,k,1) == mandatoryLevels(j)) THEN !Which cases are close to the mode?
-					IF( soundingData(i,k,7) < upperBound(j) .and. soundingData(i,k,7) > lowerBound(j) ) THEN						
-						windCases(j)=windCases(j)+1
-					END IF
-				END IF
-			END DO
-		END DO
-	END DO
-	! Now we find the Standard Deviation for every level/variable in a similar manner to the average array above
-	DO i=2,8 ! Loop through each variable
-		DO j=1,14 ! Loop through each mandatory level
-		cases=0	! Reset running totals
-		stdTotal=0
-			DO k=1,numberOfDates ! Loop through each date
-					DO l=1,20
-							IF(soundingData(k,l,1) == mandatoryLevels(j) .and. soundingData(k,l,i) < 999.98) THEN ! Only get mandatory levels
-								stdTotal=((soundingData(k,l,i)-avgSounding(j,i))**2)+stdTotal
-								cases=cases+1 ! Add one case to the running case total
-							END IF	
-					END DO	
-			END DO
-			stdSounding(j,1)=mandatoryLevels(j) ! Set the pressure level
-
-			stdTotal=stdTotal/cases ! Calculate the standard deviation
-			stdSounding(j,i)=stdTotal**0.5
-		END DO
-	END DO
-
-	! And lastly we find how many soundings are within one standard deviation of the mean
-	goodSoundings=0
-	DO i=2,8 ! Loop through each variable
-		DO j=1,14 ! Reset running totals
-			DO k=1,numberOfDates ! Loop through each date
-					DO l=1,20
-							IF(soundingData(k,l,1) == mandatoryLevels(j) .and. soundingData(k,l,i) < 999.98) THEN ! Only get mandatory levels
-		
-								! Here we find out if a case variable is within one standard deviation...
-								IF((soundingData(k,l,i) - avgSounding(j,i)) < stdSounding(j,i) ) THEN
-									goodSoundings(j,i)=goodSoundings(j,i)+1 ! ... If it is then lets
-														!     include it in our total
-								END IF	
-							END IF
-					END DO	
-			END DO
-		END DO
-	END DO
-
+	! SOUNDING STATISTICS --------------------------------------------------------------------------------------------
+	
+	CALL averageSoundingData(numberOfDates,soundingData,mandatoryLevels,avgSounding)
+	
+	CALL stdSoundingData(numberOfDates,mandatoryLevels,soundingData,avgSounding,stdSounding,goodSoundings)
+	
+	CALL windMode(soundingData,numberOfDates,modeWindDir,windCases)
+	
 	! Now we are going to get the hi,low,and average Sfc-850mb,Sfc-500mb thicknesses, and Precipital Water Values...
 	DO i=1,numberOfDates ! Loop through each date
 		PW=0. ! Reset the precipitable water value at 0
@@ -253,13 +164,13 @@ PROGRAM climoBuilder
 				ELSE IF(soundingData(i,j,1) == mandatoryLevels(4)) THEN ! Set the 500mb height
 					lev500=soundingData(i,j,2)
 				END IF
-				IF(soundingData(i,j,6) < 99998) THEN
+				IF(soundingData(i,j,6) /= -999.) THEN
 					! Find the average mixing ratio for the layer
-					IF(i < numberOfDates) THEN
-						averageMixingRatio=((soundingData(i,j,6)/1000.) + (soundingData((i+1),j,6)/1000.))/2.
+					IF(j < 20 .and. soundingData(i,(j+1),6) < 99998 .and. soundingData(i,(j+1),6) > 0) THEN
+						averageMixingRatio=((soundingData(i,j,6)/1000.) + (soundingData(i,(j+1),6)/1000.))/2.
 					END IF
 					! Find the precipitable water for the layer and add it to the total precipitable water
-					IF(j < 20) THEN
+					IF(j < 20 .and. soundingData(i,(j+1),1) < 99998 .and. soundingData(i,(j+1),1) > 0) THEN
 						PW=(averageMixingRatio * ((soundingData(i,j,1)-soundingData(i,(j+1),1))*100)/9.81) + PW
 					END IF
 				END IF
@@ -342,38 +253,37 @@ PROGRAM climoBuilder
 		asosEndLo(i)=loArray(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1)
 	END DO
 
-        ! Next we find the time-of-day statistics. We will be using the following definitions...
-        ! Morning : 0600-1000
-        ! Day     : 1000-1600
-        ! Dusk    : 1600-2000
-        ! Night   : 2000-0600
-        asosNightHi = (/ 0.,-90.,-90.,0.,-10.,0.,0.,0.,0. /)
-        asosNightLo = (/ 0.,200.,200.,200.,400.,400.,1000.,2000.,80. /)
-        ! Loop through all times...
-        DO i=1,numberOfDates
-                IF (date(i,5) < 600 .or. date(i,5) >= 2000) THEN
-                        DO j=2,9
-                                DO k=1,100
-                                        IF (asosData(i,k,1) == date(i,5) .and. asosData(i,k,j) > -900 ) THEN
-                                                nightCases=nightCases + 1
-                                                asosNightAvg(j) = asosNightAvg(j) + asosData(i,k,j)
-                                                IF (asosData(i,k,j) > asosNightHi(j)) THEN
-                                                        asosNightHi(j) = asosData(i,k,j)
-                                                END IF
+	! Next we find the time-of-day statistics. We will be using the following definitions...
+	! Morning : 0600-1000
+	! Day     : 1000-1600
+	! Dusk    : 1600-2000
+	! Night   : 2000-0600
+	asosNightHi = (/ 0.,-90.,-90.,0.,-10.,0.,0.,0.,0. /)
+	asosNightLo = (/ 0.,200.,200.,200.,400.,400.,1000.,2000.,80. /)
+	! Loop through all times...
+	DO i=1,numberOfDates
+			IF (date(i,5) < 600 .or. date(i,5) >= 2000) THEN
+					DO j=2,9
+							DO k=1,100
+									IF (asosData(i,k,1) == date(i,5) .and. asosData(i,k,j) > -900) THEN
+											nightCases=nightCases + 1
+											asosNightAvg(j) = asosNightAvg(j) + asosData(i,k,j)
+											IF (asosData(i,k,j) > asosNightHi(j)) THEN
+													asosNightHi(j) = asosData(i,k,j)
+											END IF
 
-                                                IF (asosData(i,k,j) < asosNightLo(j)) THEN
-                                                        asosNightLo(j) = asosData(i,k,j)
-                                                END IF
-                                        END IF
-                                END DO
-                        END DO
-                END IF
-        END DO
-        
-        DO i=1,9
-                asosNightAvg(i) = asosNightAvg(i) / nightCases
-        END DO
-
+											IF (asosData(i,k,j) < asosNightLo(j)) THEN
+													asosNightLo(j) = asosData(i,k,j)
+											END IF
+									END IF
+							END DO
+					END DO
+			END IF
+	END DO
+	
+	DO i=1,9
+			asosNightAvg(i) = asosNightAvg(i) / nightCases
+	END DO
 
 
 	CALL asosHistogram(histogramData,asosData,asosOnsetAvg,asosOnsetStd,numberOfDates,date(:,4)) ! Grab histogram data based on the onset time
@@ -416,7 +326,7 @@ PROGRAM climoBuilder
 304	FORMAT("------------------------------------------------------------------------------------------------")	
 305	FORMAT("AVERAGE: ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
 306	FORMAT("STD    : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
-307	FORMAT("HIGH   : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
+307	FORMAT("HIGH   : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F6.2, 12X, F7.2, 5X, F6.2)
 308	FORMAT("LOW    : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
 	WRITE(8,305) asosAvg(2),asosAvg(3),asosAvg(4),asosAvg(5),asosAvg(6),asosAvg(7),asosAvg(8),asosAvg(9)
 	WRITE(8,306) asosStd(2),asosStd(3),asosStd(4),asosStd(5),asosStd(6),asosStd(7),asosStd(8),asosAvg(9)
@@ -499,7 +409,7 @@ PROGRAM climoBuilder
 	WRITE(8,302)
 315	FORMAT("                                         MEAN SOUNDING")
 316     FORMAT(" P(mb)     Hgt(m)     T(°C)     Td(°C)      RH(%)     Mix(g/kg)     W Dir(°)     Spd(kts)")
-317	FORMAT(1X, I4, 6X, I6, 5X, F6.2, 5X, F6.2, 6X, F6.2, 9X, F7.3, 8X, F4.0, 7X, F6.2)	
+317	FORMAT(1X, I4, 6X, I7, 5X, F6.2, 5X, F6.2, 6X, F6.2, 9X, F7.3, 8X, F4.0, 7X, F6.2)	
 	DO i=1,10
 		WRITE(8,317) INT(avgSounding(i,1)),INT(avgSounding(i,2)),avgSounding(i,3),avgSounding(i,4),avgSounding(i,5),&
 		avgSounding(i,6),modeWindDir(i),avgSounding(i,8)
@@ -696,22 +606,22 @@ levelLoop:		DO j=1,20
 						soundingData(i,1,1)=REAL(dataRow(2))/10. ! Pressure
 						soundingData(i,1,2)=REAL(dataRow(3)) ! Height
 						IF(dataRow(4) == 99999) THEN
-							soundingData(i,1,3)=99999.0 ! Bad Temp
+							soundingData(i,1,3)=-999. ! Bad Temp
 						ELSE
 							soundingData(i,1,3)=REAL(dataRow(4))/10. ! Temp
 						END IF
 						IF(dataRow(5) == 99999) THEN
-							soundingData(i,1,4)=99999.0 ! Bad Dewp
+							soundingData(i,1,4)=-999. ! Bad Dewp
 						ELSE
 							soundingData(i,1,4)=REAL(dataRow(5))/10. ! Dewp
 						END IF
 						IF(dataRow(6) == 99999) THEN
-							soundingData(i,1,7)=99999.0 ! Bad Wind Dir
+							soundingData(i,1,7)=-999. ! Bad Wind Dir
 						ELSE
 							soundingData(i,1,7)=REAL(dataRow(6)) ! Wind Dir
 						END IF					
 						IF(dataRow(7) == 99999) THEN
-							soundingData(i,1,8)=99999.0 ! Bad Wind Spd
+							soundingData(i,1,8)=-999. ! Bad Wind Spd
 						ELSE	
 							soundingData(i,1,8)=REAL(dataRow(7)) ! Wind Spd
 						END IF
@@ -725,8 +635,8 @@ levelLoop:		DO j=1,20
 							! Find Mixing Ratio							
 							soundingData(i,j,6)=621.97*(e/(soundingData(i,1,1)-e))
 						ELSE ! Failed QC, create bad variables
-							soundingData(i,1,5)=99999.0
-							soundingData(i,1,6)=99999.0
+							soundingData(i,1,5)=-999.
+							soundingData(i,1,6)=-999.
 						END IF
 
 					END IF
@@ -736,22 +646,22 @@ levelLoop:		DO j=1,20
 						soundingData(i,j,1)=REAL(dataRow(2))/10. ! Pressure
 						soundingData(i,j,2)=REAL(dataRow(3)) ! Height
 						IF(dataRow(4) == 99999) THEN
-							soundingData(i,j,3)=99999.0 ! Bad Temp
+							soundingData(i,j,3)=-999. ! Bad Temp
 						ELSE
 							soundingData(i,j,3)=REAL(dataRow(4))/10. ! Temp
 						END IF
 						IF(dataRow(5) == 99999) THEN
-							soundingData(i,j,4)=99999.0 ! Bad Dewp
+							soundingData(i,j,4)=-999. ! Bad Dewp
 						ELSE
 							soundingData(i,j,4)=REAL(dataRow(5))/10. ! Dewp
 						END IF
 						IF(dataRow(6) == 99999) THEN
-							soundingData(i,j,7)=99999.0 ! Bad Wind Dir
+							soundingData(i,j,7)=-999. ! Bad Wind Dir
 						ELSE
 							soundingData(i,j,7)=REAL(dataRow(6)) ! Wind Dir
 						END IF					
 						IF(dataRow(7) == 99999) THEN
-							soundingData(i,j,8)=99999.0 ! Bad Wind Spd
+							soundingData(i,j,8)=-999. ! Bad Wind Spd
 						ELSE	
 							soundingData(i,j,8)=REAL(dataRow(7)) ! Wind Spd
 						END IF
@@ -765,8 +675,8 @@ levelLoop:		DO j=1,20
 							! Find Mixing Ratio							
 							soundingData(i,j,6)=621.97*(e/(soundingData(i,j,1)-e))
 						ELSE ! Failed QC, create bad variables
-							soundingData(i,j,5)=99999.0
-							soundingData(i,j,6)=99999.0
+							soundingData(i,j,5)=-999.
+							soundingData(i,j,6)=-999.
 						END IF
 					END IF
 					
@@ -933,6 +843,8 @@ dataArray(i,j,4) /= -999) THEN
 			            ELSE IF( dataArray(i,j,8) > 1100.0 ) THEN
 				            dataArray(i,j,8)=1013.25
 			            END IF
+			        ELSE IF(k == 7) THEN
+						dataArray(i,j,7) = 0.
                     ELSE
 			            IF(errorTrack(i,j,k) .eqv. .TRUE.) THEN
 				            IF(errorTrack(i,j+1,k) .eqv. .FALSE.) THEN
@@ -949,6 +861,8 @@ dataArray(i,j,4) /= -999) THEN
 			            ELSE IF( dataArray(i,j,8) > 1100.0 ) THEN
 				            dataArray(i,j,8)=1013.25
 			            END IF
+			        ELSE IF(k == 7) THEN
+						dataArray(i,j,7) = 0.
                     ELSE
 			            IF(errorTrack(i,j,k) .eqv. .TRUE.) THEN
 				            IF(errorTrack(i,j+1,k) .eqv. .FALSE. .and. dataArray(i,j+1,k) /= -999) THEN
@@ -974,12 +888,12 @@ END SUBROUTINE
 ! This finds mode wind direction
 !
 !=======================================================
-SUBROUTINE windMode(dataArray,n,dataOut)
+SUBROUTINE windMode(dataArray,n,dataOut,windCases)
 	REAL,DIMENSION(n,20,8),INTENT(IN) :: dataArray
 	INTEGER,INTENT(IN) :: n
-
 	REAL,DIMENSION(14),INTENT(OUT) :: dataOut
-
+	INTEGER,DIMENSION(14),INTENT(OUT) :: windCases
+	
 	INTEGER :: i,j,k,mx=0
 
 	REAL,DIMENSION(n,14) :: windArray
@@ -987,18 +901,20 @@ SUBROUTINE windMode(dataArray,n,dataOut)
 	! Mandatory Levels: 925,850,700,500,400,300,250,200,150,100,70,50,30,20 ... No guarantee higher levels are reported
 	REAL,DIMENSION(14),PARAMETER :: mandatoryLevels=(/925.,850.,700.,500.,400.,300.,250.,200.,150.,100.,70.,50.,30.,20./)
 
+	REAL,DIMENSION(14) :: upperBound,lowerBound
+
 	windArray=999.	
 	dataOut=999.
 	DO k=1,14
 		DO i=1,n
 			DO j=1,20
 				IF (dataArray(i,j,1) == mandatoryLevels(k)) THEN
-					windArray(i,k)=dataArray(i,j,5)
+					windArray(i,k)=dataArray(i,j,7)
 				END IF
 			END DO
 		END DO
 	END DO
-	DO i=1,14
+	DO i=1,20
 		mx=0
 		DO j=0,360
 			DO k=1,n
@@ -1015,6 +931,35 @@ SUBROUTINE windMode(dataArray,n,dataOut)
 			END IF
 		END DO
 	END DO
+	
+	! Find number of days within 68% of the mode...
+	windCases=0
+	DO i=1,14 !Set the boundaries within 68% of mode...
+		upperBound(i) = (0.68 * dataOut(i)) + dataOut(i)
+		lowerBound(i) = dataOut(i) - (0.68 * dataOut(i))
+		IF( upperBound(i) < 0 ) THEN
+			upperBound(i)=upperBound(i)+360.
+		ELSE IF(upperBound(i) > 360) THEN
+			upperBound(i)=upperBound(i)-360.
+		END IF
+		IF( lowerBound(i) < 0 ) THEN
+			lowerBound(i)=lowerBound(i)+360.
+		ELSE IF(lowerBound(i) > 360) THEN
+			lowerBound(i)=lowerBound(i)-360.
+		END IF
+	END DO
+	DO i=1,n
+		DO j=1,14
+			DO k=1,20
+				IF(dataArray(i,k,1) == mandatoryLevels(j)) THEN !Which cases are close to the mode?
+					IF( dataArray(i,k,7) < upperBound(j) .and. dataArray(i,k,7) > lowerBound(j) ) THEN			
+						windCases(j)=windCases(j)+1
+					END IF
+				END IF
+			END DO
+		END DO
+	END DO
+	
 END SUBROUTINE
 
 !=======================================================
@@ -1106,6 +1051,105 @@ SUBROUTINE asosDTHistogram(bins,asosData,n,times)
 	END DO
 END SUBROUTINE
 
+!=======================================================
+! Average Sounding Data
+!
+! Finds average of a 3-D array of sounding data
+! (CASE #, LEVEL, VARIABLE)
+!
+!=======================================================
+SUBROUTINE averageSoundingData(caseTotal,soundingData,mandatoryLevels,avgSounding)
+	INTEGER,INTENT(IN) :: caseTotal
+	REAL,DIMENSION(caseTotal,20,8),INTENT(IN) :: soundingData
+	REAL,DIMENSION(14),INTENT(IN) :: mandatoryLevels
+	REAL,DIMENSION(15,8),INTENT(OUT) :: avgSounding
+	
+	INTEGER :: cases, i,j,k,l
+	
+	avgSounding = 0 ! Initialize array
+	
+	DO i=2,8 ! Loop through each variable
+			
+		DO j=1,14 ! Loop through each mandatory level
+		cases=0 ! Reset case total as 0
+			DO k=1,caseTotal ! Loop through each date
+					DO l=1,20 ! Loop through each level						
+							IF(soundingData(k,l,1) == mandatoryLevels(j) .and. soundingData(k,l,i) /= -999.) THEN ! Find the current mandatory level
+								avgSounding(j,i)=avgSounding(j,i)+soundingData(k,l,i) ! Add the value to the total
+								cases=cases+1 ! Add one case to the running case total
+							END IF	
+					END DO	
+			END DO
+			IF(i == 7) THEN
+				avgSounding(j,i)=avgSounding(j,i)/cases
+				avgSounding(j,i)=MOD(avgSounding(j,i),360.)
+			ELSE
+				avgSounding(j,i)=avgSounding(j,i)/cases ! Find the average
+			END IF
+			avgSounding(j,1)=mandatoryLevels(j) ! Set the pressure level
+		END DO
+	END DO
+END SUBROUTINE
+
+!=======================================================
+! STD Sounding Data
+!
+! Finds STD of a 3-D array of sounding data
+! (CASE #, LEVEL, VARIABLE)
+!
+!=======================================================
+SUBROUTINE stdSoundingData(caseTotal,mandatoryLevels,soundingData,avgSounding,stdSounding,goodSoundings)
+	INTEGER,INTENT(IN) :: caseTotal
+	REAL,DIMENSION(caseTotal,20,8),INTENT(IN) :: soundingData
+	REAL,DIMENSION(14),INTENT(IN) :: mandatoryLevels
+	REAL,DIMENSION(15,8),INTENT(IN) :: avgSounding
+	REAL,DIMENSION(15,8),INTENT(OUT) :: stdSounding
+	INTEGER,DIMENSION(15,8),INTENT(OUT) :: goodSoundings
+	
+	INTEGER :: i,j,k,l,cases
+	REAL :: stdTotal
+	
+	! Now we find the Standard Deviation for every level/variable in a similar manner to the average array above
+	DO i=2,8 ! Loop through each variable
+		DO j=1,14 ! Loop through each mandatory level
+		cases=0	! Reset running totals
+		stdTotal=0
+			DO k=1,caseTotal ! Loop through each date
+					DO l=1,20
+							IF(soundingData(k,l,1) == mandatoryLevels(j) .and. soundingData(k,l,i) /= -999.) THEN ! Only get mandatory levels
+								stdTotal=((soundingData(k,l,i)-avgSounding(j,i))**2)+stdTotal
+								cases=cases+1 ! Add one case to the running case total
+							END IF	
+					END DO	
+			END DO
+			stdSounding(j,1)=mandatoryLevels(j) ! Set the pressure level
+
+			stdTotal=stdTotal/cases ! Calculate the standard deviation
+			stdSounding(j,i)=stdTotal**0.5
+		END DO
+	END DO
+
+	! And lastly we find how many soundings are within one standard deviation of the mean
+	goodSoundings=0
+	DO i=2,8 ! Loop through each variable
+		DO j=1,14 ! Reset running totals
+			DO k=1,caseTotal ! Loop through each date
+					DO l=1,20
+							IF(soundingData(k,l,1) == mandatoryLevels(j) .and. soundingData(k,l,i) < 999.98) THEN ! Only get mandatory levels
+		
+								! Here we find out if a case variable is within one standard deviation...
+								IF((soundingData(k,l,i) - avgSounding(j,i)) < stdSounding(j,i) ) THEN
+									goodSoundings(j,i)=goodSoundings(j,i)+1 ! ... If it is then lets
+														!     include it in our total
+								END IF	
+							END IF
+					END DO	
+			END DO
+		END DO
+	END DO
+	
+END SUBROUTINE
+
 ! ------------------------------------------------------------------------------------------------------------------------
 ! FUNCTIONS
 ! ------------------------------------------------------------------------------------------------------------------------
@@ -1165,7 +1209,7 @@ REAL FUNCTION eventOnsetAvg(array,n,times,arrayTimes,amUsingDates)
 	total = 0
 	DO i=1,n
 		DO j=1,100
-                IF(array(i,j) /= -999 .and. arrayTimes(i,j) /= -999) THEN ! Check to omit missing/failed data
+                IF(array(i,j) /= -999 .and. arrayTimes(i,j) /= -999 .and. array(i,j) /= 999) THEN ! Check to omit missing/failed data
 			        IF(amUsingDates == 1 .and. times(i) == arrayTimes(i,j) .or. amUsingDates == 0) THEN
 				        total=total+1
 				        summation=summation+array(i,j)
