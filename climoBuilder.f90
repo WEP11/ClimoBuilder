@@ -30,7 +30,7 @@ PROGRAM climoBuilder
 
 	! Variables:
 	INTEGER :: ioStatus, numberOfDates	! File IO Status, Number Of Case Dates, NULL Variable for bogus data reading
-	INTEGER :: i,j,k,l,cases		! Loop Counters i,j,k,and l , and running case total for loops
+	INTEGER :: i,j,k		! Loop Counters i,j,k,and l , and running case total for loops
 
 	INTEGER,DIMENSION(:,:),ALLOCATABLE :: date 	! Array containing the Year,month,day,time as read from the dates input file
 
@@ -67,13 +67,10 @@ PROGRAM climoBuilder
 	REAL,DIMENSION(9) :: asosAvg=0, asosStd=0, asosHi=0, asosLo=0, asosOnsetAvg=0,asosOnsetStd=0,asosOnsetHi=0,asosOnsetLo=0,&
 		asosPeakAvg=0,asosPeakStd=0,asosPeakHi=0,asosPeakLo=0, asosEndAvg=0,asosEndStd=0,asosEndHi=0,asosEndLo=0
         
-        REAL,DIMENSION(9) :: asosMorningAvg=0, asosMorningStd=0, asosMorningLo=0, asosMorningHi=0, asosDayAvg=0, asosDayStd=0,&
-                asosDayLo=0,asosDayHi=0,asosDuskAvg=0,asosDuskStd,asosDuskHi=0,asosDuskLo=0,asosNightAvg=0,asosNightStd=0,&
-                asosNightHi=0,asosNightLo=0        
+	REAL,DIMENSION(9) :: asosMorningAvg=0, asosMorningStd=0, asosMorningLo=0, asosMorningHi=0, asosDayAvg=0, asosDayStd=0,&
+			asosDayLo=0,asosDayHi=0,asosDuskAvg=0,asosDuskStd,asosDuskHi=0,asosDuskLo=0,asosNightAvg=0,asosNightStd=0,&
+			asosNightHi=0,asosNightLo=0        
 
-
-        ! Time-of-Day Case Counters:
-        INTEGER :: morningCases=0, dayCases=0, duskCases=0, nightCases=0
 
 	INTEGER,DIMENSION(14) :: windCases
 
@@ -252,40 +249,18 @@ PROGRAM climoBuilder
 		asosEndHi(i)=hiArray(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1)
 		asosEndLo(i)=loArray(asosData(:,:,i),numberOfDates,date(:,6),asosData(:,:,1),1)
 	END DO
-
+	
 	! Next we find the time-of-day statistics. We will be using the following definitions...
 	! Morning : 0600-1000
 	! Day     : 1000-1600
 	! Dusk    : 1600-2000
 	! Night   : 2000-0600
-	asosNightHi = (/ 0.,-90.,-90.,0.,-10.,0.,0.,0.,0. /)
-	asosNightLo = (/ 0.,200.,200.,200.,400.,400.,1000.,2000.,80. /)
-	! Loop through all times...
-	DO i=1,numberOfDates
-			IF (date(i,5) < 600 .or. date(i,5) >= 2000) THEN
-					DO j=2,9
-							DO k=1,100
-									IF (asosData(i,k,1) == date(i,5) .and. asosData(i,k,j) > -900) THEN
-											nightCases=nightCases + 1
-											asosNightAvg(j) = asosNightAvg(j) + asosData(i,k,j)
-											IF (asosData(i,k,j) > asosNightHi(j)) THEN
-													asosNightHi(j) = asosData(i,k,j)
-											END IF
 
-											IF (asosData(i,k,j) < asosNightLo(j)) THEN
-													asosNightLo(j) = asosData(i,k,j)
-											END IF
-									END IF
-							END DO
-					END DO
-			END IF
-	END DO
+	CALL diurnalStats(numberOfDates,asosMorningHi,asosMorningLo,asosMorningAvg,asosMorningStd,asosData,date(:,5),600,1000)
+	CALL diurnalStats(numberOfDates,asosDayHi,asosDayLo,asosDayAvg,asosDayStd,asosData,date(:,5),1000,1600)
+	CALL diurnalStats(numberOfDates,asosDuskHi,asosDuskLo,asosDuskAvg,asosDuskStd,asosData,date(:,5),1600,2000)
+	CALL diurnalStats(numberOfDates,asosNightHi,asosNightLo,asosNightAvg,asosNightStd,asosData,date(:,5),2000,600)
 	
-	DO i=1,9
-			asosNightAvg(i) = asosNightAvg(i) / nightCases
-	END DO
-
-
 	CALL asosHistogram(histogramData,asosData,asosOnsetAvg,asosOnsetStd,numberOfDates,date(:,4)) ! Grab histogram data based on the onset time
 	CALL asosDTHistogram(histogramData,asosData,numberOfDates,date(:,4)) ! Grab histogram data based on the onset time
 
@@ -316,7 +291,10 @@ PROGRAM climoBuilder
 	WRITE(8,302)
 	WRITE(8,303)
 	WRITE(8,304)
-403     FORMAT("                                      EVENING EVENT STATISTICS")
+403 FORMAT("                                       NIGHT EVENT STATISTICS")
+404 FORMAT("                                      MORNING EVENT STATISTICS")
+405 FORMAT("                                        DAY EVENT STATISTICS")
+406 FORMAT("                                      EVENING EVENT STATISTICS")
 397	FORMAT("                                      EVENT END ASOS STATISTICS")
 398	FORMAT("                                     EVENT PEAK ASOS STATISTICS")
 399	FORMAT("                                     EVENT ONSET ASOS STATISTICS")	
@@ -326,7 +304,7 @@ PROGRAM climoBuilder
 304	FORMAT("------------------------------------------------------------------------------------------------")	
 305	FORMAT("AVERAGE: ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
 306	FORMAT("STD    : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
-307	FORMAT("HIGH   : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F6.2, 12X, F7.2, 5X, F6.2)
+307	FORMAT("HIGH   : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
 308	FORMAT("LOW    : ",F5.2, 5X, F5.2, 5X, F7.2, 5X, F6.2, 5X, F6.2, 5X, F5.2, 12X, F7.2, 5X, F6.2)
 	WRITE(8,305) asosAvg(2),asosAvg(3),asosAvg(4),asosAvg(5),asosAvg(6),asosAvg(7),asosAvg(8),asosAvg(9)
 	WRITE(8,306) asosStd(2),asosStd(3),asosStd(4),asosStd(5),asosStd(6),asosStd(7),asosStd(8),asosAvg(9)
@@ -374,19 +352,63 @@ PROGRAM climoBuilder
 			asosEndAvg(8),asosEndAvg(9)
     WRITE(8,308) asosEndLo(2),asosEndLo(3),asosEndLo(4),asosEndLo(5),asosEndLo(6),asosEndLo(7),&
 			asosEndLo(8),asosEndLo(9)
-        WRITE(8,309)
-        WRITE(8,403)
-        WRITE(8,302)
-        WRITE(8,303)
-        WRITE(8,304)
+	
+	WRITE(8,309)
+    WRITE(8,404)
+    WRITE(8,302)
+    WRITE(8,303)
+    WRITE(8,304)
+	WRITE(8,305) asosMorningAvg(2),asosMorningAvg(3),asosMorningAvg(4),asosMorningAvg(5),asosMorningAvg(6),asosMorningAvg(7),&
+			asosMorningAvg(8),asosMorningAvg(9)
+    WRITE(8,306) asosMorningStd(2),asosMorningStd(3),asosMorningStd(4),asosMorningStd(5),asosMorningStd(6),asosMorningStd(7),&
+			asosMorningStd(8),asosMorningStd(9)
+    WRITE(8,307) asosMorningHi(2),asosMorningHi(3),asosMorningHi(4),asosMorningHi(5),asosMorningHi(6),asosMorningHi(7),&
+			asosMorningAvg(8),asosMorningAvg(9)
+    WRITE(8,308) asosMorningLo(2),asosMorningLo(3),asosMorningLo(4),asosMorningLo(5),asosMorningLo(6),asosMorningLo(7),&
+			asosMorningLo(8),asosMorningLo(9)
+			
+	WRITE(8,309)
+    WRITE(8,405)
+    WRITE(8,302)
+    WRITE(8,303)
+    WRITE(8,304)
+	WRITE(8,305) asosDayAvg(2),asosDayAvg(3),asosDayAvg(4),asosDayAvg(5),asosDayAvg(6),asosDayAvg(7),&
+			asosDayAvg(8),asosDayAvg(9)
+    WRITE(8,306) asosDayStd(2),asosDayStd(3),asosDayStd(4),asosDayStd(5),asosDayStd(6),asosDayStd(7),&
+		asosDayStd(8),asosDayStd(9)
+    WRITE(8,307) asosDayHi(2),asosDayHi(3),asosDayHi(4),asosDayHi(5),asosDayHi(6),asosDayHi(7),&
+			asosDayAvg(8),asosDayAvg(9)
+    WRITE(8,308) asosDayLo(2),asosDayLo(3),asosDayLo(4),asosDayLo(5),asosDayLo(6),asosDayLo(7),&
+			asosDayLo(8),asosDayLo(9)
+			
+	WRITE(8,309)
+    WRITE(8,406)
+    WRITE(8,302)
+    WRITE(8,303)
+    WRITE(8,304)
+	WRITE(8,305) asosDuskAvg(2),asosDuskAvg(3),asosDuskAvg(4),asosDuskAvg(5),asosDuskAvg(6),asosDuskAvg(7),&
+			asosDuskAvg(8),asosDuskAvg(9)
+    WRITE(8,306) asosDuskStd(2),asosDuskStd(3),asosDuskStd(4),asosDuskStd(5),asosDuskStd(6),asosDuskStd(7),&
+			asosDuskStd(8),asosDuskStd(9)
+    WRITE(8,307) asosDuskHi(2),asosDuskHi(3),asosDuskHi(4),asosDuskHi(5),asosDuskHi(6),asosDuskHi(7),&
+			asosDuskAvg(8),asosDuskAvg(9)
+    WRITE(8,308) asosDuskLo(2),asosDuskLo(3),asosDuskLo(4),asosDuskLo(5),asosDuskLo(6),asosDuskLo(7),&
+			asosDuskLo(8),asosDuskLo(9)
+			
+	WRITE(8,309)
+    WRITE(8,403)
+    WRITE(8,302)
+    WRITE(8,303)
+    WRITE(8,304)
 	WRITE(8,305) asosNightAvg(2),asosNightAvg(3),asosNightAvg(4),asosNightAvg(5),asosNightAvg(6),asosNightAvg(7),&
 			asosNightAvg(8),asosNightAvg(9)
-    !WRITE(8,306) asosEndStd(2),asosEndStd(3),asosEndStd(4),asosEndStd(5),asosEndStd(6),asosEndStd(7),&
-!			asosEndStd(8),asosEndStd(9)
+    WRITE(8,306) asosNightStd(2),asosNightStd(3),asosNightStd(4),asosNightStd(5),asosNightStd(6),asosNightStd(7),&
+		asosNightStd(8),asosNightStd(9)
     WRITE(8,307) asosNightHi(2),asosNightHi(3),asosNightHi(4),asosNightHi(5),asosNightHi(6),asosNightHi(7),&
 			asosNightAvg(8),asosNightAvg(9)
     WRITE(8,308) asosNightLo(2),asosNightLo(3),asosNightLo(4),asosNightLo(5),asosNightLo(6),asosNightLo(7),&
 			asosNightLo(8),asosNightLo(9)
+	
 309	FORMAT(/)
 310	FORMAT("                                        UPPER AIR STATISTICS")
 311	FORMAT("                          AVG       HI       LO")
@@ -786,8 +808,7 @@ SUBROUTINE asosQC(dataArray,arraySize)
 			END DO
 		END DO
 	END DO
-
-! Identify bogus data ...
+	! Identify bogus data ...
     DO i=1,arraySize
         DO j=1,100
             ! T + Td...    
@@ -797,53 +818,51 @@ SUBROUTINE asosQC(dataArray,arraySize)
 			END IF
 
             ! RH...
-            IF(dataArray(i,j,4) > 100 .or. dataArray(i,j,4) < 0 .and.&
-dataArray(i,j,4) /= -999) THEN
+            IF((dataArray(i,j,4) > 100 .or. dataArray(i,j,4) < 0) .and. dataArray(i,j,4) /= -999) THEN
 				errorTrack(i,j,4)=.TRUE.
 				errorCount=errorCount+1
 			END IF
 
             ! Wind Direction
-            IF(dataArray(i,j,5) > 360 .or. dataArray(i,j,5) < 0 .and. dataArray(i,j,4) /= -999) THEN
+            IF((dataArray(i,j,5) > 360 .or. dataArray(i,j,5) < 0) .and. dataArray(i,j,4) /= -999) THEN
 			    errorTrack(i,j,5)=.TRUE.
 			    errorCount=errorCount+1
 			END IF
     
             ! Wind Speed (We're optimistic)
-            IF(dataArray(i,j,6) > 150 .or. dataArray(i,j,6) < 0 .and. dataArray(i,j,4) /= -999) THEN
+            IF((dataArray(i,j,6) > 150 .or. dataArray(i,j,6) < 0) .and. dataArray(i,j,4) /= -999) THEN
 			    errorTrack(i,j,6)=.TRUE.
 			    errorCount=errorCount+1
 			END IF
 
             ! 1hr Precip (Considering world record of 12?)
-            IF(dataArray(i,j,7) > 13 .or. dataArray(i,j,7) < 0 .and. errorTrack(i,j,7) .neqv. .TRUE. .and.&
-dataArray(i,j,4) /= -999) THEN
+            IF((dataArray(i,j,7) > 13 .or. dataArray(i,j,7) < 0) .and. (errorTrack(i,j,7) .neqv. .TRUE. .and.&
+					dataArray(i,j,7) /= -999)) THEN
 			    errorTrack(i,j,7)=.TRUE.
 			    errorCount=errorCount+1
 			END IF
 
             ! Pressure
-            IF(dataArray(i,j,8) > 1100 .or. dataArray(i,j,5) < 800 .and. errorTrack(i,j,8) .neqv. .TRUE. .and.&
-dataArray(i,j,4) /= -999) THEN
+            IF((dataArray(i,j,8) > 1100 .or. dataArray(i,j,5) < 800) .and. (errorTrack(i,j,8) .neqv. .TRUE. .and.&
+					dataArray(i,j,4) /= -999)) THEN
 			    errorTrack(i,j,8)=.TRUE.
 			    errorCount=errorCount+1
 			END IF
 
 		END DO
 	END DO
-
-	! Replace ID'd errors with estimated replacements... (This needs to be an averaging, not freezing
+	! Replace errors with estimated replacements...
 	DO i=1,arraySize
-		DO j=2,100
+		DO j=1,100
             DO k=2,8
-                IF(i == 1) THEN
+                IF(i == 1 .OR. j == 1) THEN
                     IF(k == 8) THEN
                         IF( dataArray(i,j,8) < 700. .AND. dataArray(i,j,8) > 0. ) THEN
 				            dataArray(i,j,8)=1013.25
 			            ELSE IF( dataArray(i,j,8) > 1100.0 ) THEN
 				            dataArray(i,j,8)=1013.25
 			            END IF
-			        ELSE IF(k == 7) THEN
+			        ELSE IF((k == 7 .AND. dataArray(i,j,7) > 13.) .OR. (k == 7 .AND. dataArray(i,j,7) < 0.)) THEN
 						dataArray(i,j,7) = 0.
                     ELSE
 			            IF(errorTrack(i,j,k) .eqv. .TRUE.) THEN
@@ -861,7 +880,8 @@ dataArray(i,j,4) /= -999) THEN
 			            ELSE IF( dataArray(i,j,8) > 1100.0 ) THEN
 				            dataArray(i,j,8)=1013.25
 			            END IF
-			        ELSE IF(k == 7) THEN
+			        ELSE IF(((k == 7 .AND. dataArray(i,j,7) > 13.) .OR. (k== 7 .AND. dataArray(i,j,7) < 0.)) .AND.&
+						dataArray(i,j,7) /= -999.) THEN
 						dataArray(i,j,7) = 0.
                     ELSE
 			            IF(errorTrack(i,j,k) .eqv. .TRUE.) THEN
@@ -878,7 +898,7 @@ dataArray(i,j,4) /= -999) THEN
 	END DO
 	
 	WRITE(*,5001) errorCount,SIZE(dataArray)
-5001	FORMAT(/,I5,' errors corrected in ASOS quality control from',I6,' values',//)
+5001	FORMAT(/,I7,' errors corrected in ASOS quality control from ',I6,' values',//)
 	
 END SUBROUTINE
 
@@ -1150,6 +1170,62 @@ SUBROUTINE stdSoundingData(caseTotal,mandatoryLevels,soundingData,avgSounding,st
 	
 END SUBROUTINE
 
+SUBROUTINE diurnalStats(n,hi,lo,avg,std,asosData,dateArray,startTime,endTime)
+	INTEGER,INTENT(IN) :: n,startTime,endTime
+	REAL,DIMENSION(9),INTENT(OUT) :: hi,lo,avg,std
+	REAL,DIMENSION(n,100,9),INTENT(IN) :: asosData
+	INTEGER,DIMENSION(n),INTENT(IN) :: dateArray
+	
+	INTEGER :: i,j,k,cases
+
+	cases = 0
+	avg = 0
+	std = 0
+	hi = (/ 0.,-90.,-90.,0.,-10.,-1.,-1.,-1.,0. /)
+	lo = (/ 0.,200.,200.,200.,400.,400.,1000.,2000.,80. /)
+	
+	! FIND AVG,HI, and LO
+	DO i=1,9
+		cases = 0
+		DO j=1,n
+			IF (dateArray(j) < endTime .or. dateArray(j) >= startTime) THEN
+				DO k=1,100
+					IF (dateArray(j) /= -999 .and. (asosData(j,k,1) == dateArray(j) .and. asosData(j,k,i) /= -999.)) THEN
+						cases=cases + 1
+						avg(i) = avg(i) + asosData(j,k,i)
+						IF (asosData(j,k,i) > hi(i)) THEN
+							hi(i) = asosData(j,k,i)
+						END IF
+
+						IF (asosData(j,k,i) < lo(i)) THEN
+							lo(i) = asosData(j,k,i)
+						END IF
+					END IF
+				END DO
+			END IF
+		END DO
+		avg(i) = avg(i) / cases
+	END DO
+	
+	! FIND STD
+	DO i=2,9
+		cases=0
+		DO j=1,n
+			IF (dateArray(j) < endTime .or. dateArray(j) >= startTime) THEN
+				DO k=1,100
+					IF (asosData(j,k,1) == dateArray(j) .and. asosData(j,k,i) /= -999.) THEN
+							cases=cases + 1
+							std(i) = ((asosData(j,k,i)-avg(i))**2) + std(i)
+					END IF
+				END DO
+			END IF
+		END DO
+		std(i) = std(i) / cases
+		std(i) = std(i)**0.5
+	END DO
+	
+END SUBROUTINE
+
 ! ------------------------------------------------------------------------------------------------------------------------
 ! FUNCTIONS
 ! ------------------------------------------------------------------------------------------------------------------------
@@ -1210,7 +1286,7 @@ REAL FUNCTION eventOnsetAvg(array,n,times,arrayTimes,amUsingDates)
 	DO i=1,n
 		DO j=1,100
                 IF(array(i,j) /= -999 .and. arrayTimes(i,j) /= -999 .and. array(i,j) /= 999) THEN ! Check to omit missing/failed data
-			        IF(amUsingDates == 1 .and. times(i) == arrayTimes(i,j) .or. amUsingDates == 0) THEN
+			        IF((amUsingDates == 1 .and. times(i) == arrayTimes(i,j)) .or. amUsingDates == 0) THEN
 				        total=total+1
 				        summation=summation+array(i,j)
 			        END IF
